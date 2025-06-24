@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+import os
+import subprocess
+import sys
+
+def run_command(command):
+    try:
+        subprocess.run(command, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command: {command}\n{e}")
+        sys.exit(1)
+
+def install_snort():
+    print("[+] Installing Snort...")
+    run_command("sudo apt update")
+    run_command("sudo apt install -y snort")
+    print("[+] Snort installed successfully.")
+
+def install_suricata():
+    print("[+] Installing Suricata...")
+    run_command("sudo apt update")
+    run_command("sudo apt install -y suricata")
+    print("[+] Suricata installed successfully.")
+
+def configure_rules(tool):
+    if tool == "snort":
+        print("[+] Configuring Snort rules...")
+        rule = '''
+alert tcp any any -> any 22 (msg:"SSH Brute Force Attempt"; flow:to_server; flags:S; threshold:type threshold, track by_src, count 5, seconds 60; sid:1000001; rev:1;)
+'''
+        with open("/etc/snort/rules/local.rules", "a") as f:
+            f.write(rule)
+        run_command("sudo snort -T -c /etc/snort/snort.conf")
+    elif tool == "suricata":
+        print("[+] Configuring Suricata rules...")
+        rule = '''
+alert http any any -> any any (msg:"SQL Injection Attempt"; flow:to_server; content:"SELECT"; nocase; http_uri; sid:1000002; rev:1;)
+'''
+        with open("/etc/suricata/rules/local.rules", "a") as f:
+            f.write(rule)
+        run_command("sudo suricata -T -c /etc/suricata/suricata.yaml")
+
+def start_monitoring(tool, interface):
+    if tool == "snort":
+        print(f"[+] Starting Snort on interface {interface}...")
+        subprocess.Popen(f"sudo snort -A console -q -c /etc/snort/snort.conf -i {interface}", shell=True)
+    elif tool == "suricata":
+        print(f"[+] Starting Suricata on interface {interface}...")
+        subprocess.Popen(f"sudo suricata -c /etc/suricata/suricata.yaml -i {interface}", shell=True)
+
+def setup_elk_stack():
+    print("[+] Setting up ELK Stack for visualization...")
+    run_command("sudo apt install -y docker.io")
+    run_command("sudo systemctl start docker")
+    run_command("sudo systemctl enable docker")
+    run_command("sudo docker pull sebp/elk")
+    run_command("sudo docker run -p 5601:5601 -p 9200:9200 -p 5044:5044 -it --name elk sebp/elk")
+    print("[+] ELK Stack is running. Access Kibana at http://localhost:5601")
+
+def main():
+    print("=== Network Intrusion Detection System (NIDS) Setup ===")
+    tool = input("Choose NIDS tool (snort/suricata): ").strip().lower()
+    interface = input("Enter network interface (e.g., eth0): ").strip()
+
+    if tool == "snort":
+        install_snort()
+    elif tool == "suricata":
+        install_suricata()
+    else:
+        print("Invalid tool choice. Exiting.")
+        sys.exit(1)
+
+    configure_rules(tool)
+    start_monitoring(tool, interface)
+
+    visualize = input("Do you want to set up visualization with ELK Stack? (y/n): ").strip().lower()
+    if visualize == "y":
+        setup_elk_stack()
+
+    print("[+] NIDS setup complete. Monitoring started.")
+
+if __name__ == "__main__":
+    main()
